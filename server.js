@@ -49,7 +49,8 @@ async function fetchNews() {
   console.log(`[${new Date().toLocaleTimeString('he-IL')}] מושך נתונים מהערוצים...`);
   let allMessages = [];
 
-  const fetchPromises = channels.map(async (channel) => {
+  // שינוי קריטי: עוברים לעבודה טורית (אחד אחד) במקום כולם בבת אחת
+  for (const channel of channels) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000); 
@@ -57,33 +58,48 @@ async function fetchNews() {
       const response = await fetch(channel.url, { signal: controller.signal });
       clearTimeout(timeoutId);
       
-      if (!response.ok) return;
-      const text = await response.text();
-      
-      const itemRegex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<\/item>/gi;
-      let match;
-      let count = 0;
-      
-      while ((match = itemRegex.exec(text)) !== null && count < 2) {
-        let title = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
-        allMessages.push({ text: title, source: channel.name });
-        count++;
+      if (response.ok) {
+        const text = await response.text();
+        
+        const itemRegex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<\/item>/gi;
+        let match;
+        let count = 0;
+        
+        while ((match = itemRegex.exec(text)) !== null && count < 2) {
+          let title = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
+          allMessages.push({ text: title, source: channel.name });
+          count++;
+        }
       }
     } catch (e) {
       // דילוג על שגיאות בערוץ ספציפי
     }
-  });
+    
+    // הפסקה של חצי שנייה בין ערוץ לערוץ כדי לא להיראות כמו התקפת רשת ולמנוע חסימה!
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
 
-  await Promise.allSettled(fetchPromises);
-  cachedMessages = allMessages;
-  console.log(`משיכה הסתיימה. נשמרו ${cachedMessages.length} הודעות.`);
+  // עדכון הזיכרון רק אם באמת קיבלנו נתונים
+  if (allMessages.length > 0) {
+    cachedMessages = allMessages;
+    console.log(`משיכה הסתיימה בהצלחה. הזיכרון עודכן עם ${cachedMessages.length} הודעות.`);
+  } else {
+    console.log(`לא התקבלו הודעות חדשות בסבב הזה (ייתכן עומס זמני). שומר על הזיכרון הקיים.`);
+  }
 }
 
 fetchNews();
-setInterval(fetchNews, 60 * 1000); // רץ פעם בדקה
+
+// החזרנו את הריצה לפעם בדקה בדיוק!
+setInterval(fetchNews, 60 * 1000); 
 
 app.get('/', (req, res) => {
   res.json(cachedMessages);
+});
+
+// נתיב "דופק" קטן שנועד לשמור על השרת ער
+app.get('/ping', (req, res) => {
+  res.send('pong');
 });
 
 const PORT = process.env.PORT || 3000;
