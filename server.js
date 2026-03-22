@@ -7,100 +7,136 @@ app.use(cors());
 
 let cachedMessages = [];
 
-// הרשימה הענקית - כולל כל ערוצי המבזקים ואתרי החדשות
+// רשימת הערוצים החדשה - שימוש בגישה ישירה לטלגרם (t.me/s/) ללא מתווכים!
 const channels = [
-  { name: "JDN חדשות (אתר)", url: "https://www.jdn.co.il/feed/" },
-  { name: "ערוץ 7 (אתר)", url: "https://www.inn.co.il/Rss.aspx?Category=1" },
-  { name: "ערוץ 14 (אתר)", url: "https://www.now14.co.il/feed/" },
-  { name: "סרוגים (אתר)", url: "https://www.srugim.co.il/feed" },
-  { name: "המחדש (אתר)", url: "https://hm-news.co.il/feed/" },
-  { name: "בחדרי חרדים (אתר)", url: "https://www.bhol.co.il/rss.xml" },
+  // אתרי אינטרנט (RSS)
+  { name: "JDN חדשות (אתר)", url: "https://www.jdn.co.il/feed/", type: "rss" },
+  { name: "ערוץ 7 (אתר)", url: "https://www.inn.co.il/Rss.aspx?Category=1", type: "rss" },
+  { name: "ערוץ 14 (אתר)", url: "https://www.now14.co.il/feed/", type: "rss" },
+  { name: "סרוגים (אתר)", url: "https://www.srugim.co.il/feed", type: "rss" },
+  { name: "המחדש (אתר)", url: "https://hm-news.co.il/feed/", type: "rss" },
   
-  { name: "301 העולם הערבי", url: "https://rsshub.app/telegram/channel/arabworld301" },
-  { name: "המוקד", url: "https://rsshub.app/telegram/channel/hamoked_il" },
-  { name: "מבזקי בטחון 24/7", url: "https://rsshub.app/telegram/channel/mivzakeybitachon" },
-  { name: "חדשות קודקוד", url: "https://rsshub.app/telegram/channel/kodkodgroup" },
-  { name: "זירת החדשות", url: "https://rsshub.app/telegram/channel/ZiratNews" },
-  { name: "זירה פוליטית", url: "https://rsshub.app/telegram/channel/Zira_politit" },
-  { name: "החדשות החמות", url: "https://rsshub.app/telegram/channel/hachadashot_hachamot" },
-  { name: "חדשות הבזק", url: "https://rsshub.app/telegram/channel/mivzakimnet" },
-  { name: "חדשות ישראל", url: "https://rsshub.app/telegram/channel/israel_news_telegram" },
-  { name: "עדכונים ומבזקים", url: "https://rsshub.app/telegram/channel/idkunim_mivzakim" },
-  { name: "הקו החרדי", url: "https://rsshub.app/telegram/channel/kavhacharedi" },
-  { name: "צ'אט הכתבים (N12)", url: "https://rsshub.app/telegram/channel/N12chat" },
-  { name: "חדשות 25", url: "https://rsshub.app/telegram/channel/news25" },
+  // ערוצי טלגרם אקטיביים - גישה ישירה (HTML Scraping)
+  { name: "301 העולם הערבי", url: "https://t.me/s/arabworld301", type: "telegram" },
+  { name: "המוקד", url: "https://t.me/s/hamoked_il", type: "telegram" },
+  { name: "מבזקי בטחון 24/7", url: "https://t.me/s/mivzakeybitachon", type: "telegram" },
+  { name: "חדשות קודקוד", url: "https://t.me/s/kodkodgroup", type: "telegram" },
+  { name: "זירת החדשות", url: "https://t.me/s/ZiratNews", type: "telegram" },
+  { name: "זירה פוליטית", url: "https://t.me/s/Zira_politit", type: "telegram" },
+  { name: "החדשות החמות", url: "https://t.me/s/hachadashot_hachamot", type: "telegram" },
+  { name: "חדשות הבזק", url: "https://t.me/s/mivzakimnet", type: "telegram" },
+  { name: "חדשות ישראל", url: "https://t.me/s/israel_news_telegram", type: "telegram" },
+  { name: "עדכונים ומבזקים", url: "https://t.me/s/idkunim_mivzakim", type: "telegram" },
+  { name: "הקו החרדי", url: "https://t.me/s/kavhacharedi", type: "telegram" },
+  { name: "צ'אט הכתבים (N12)", url: "https://t.me/s/N12chat", type: "telegram" },
+  { name: "חדשות 25", url: "https://t.me/s/news25", type: "telegram" },
   
-  { name: "עמית סגל", url: "https://rsshub.app/telegram/channel/amitsegal" },
-  { name: "ינון מגל", url: "https://rsshub.app/telegram/channel/yinonmagal" },
-  { name: "יאיר שרקי", url: "https://rsshub.app/telegram/channel/yaircherki" },
-  { name: "ישי כהן", url: "https://rsshub.app/telegram/channel/ishaycoen" },
-  { name: "אבי רבינא", url: "https://rsshub.app/telegram/channel/AviRabina" },
-  { name: "מיכאל שמש", url: "https://rsshub.app/telegram/channel/michaelshemesh" },
-  { name: "דורון קדוש (צבא)", url: "https://rsshub.app/telegram/channel/doron_kadosh" },
-  { name: "כיכר השבת", url: "https://rsshub.app/telegram/channel/kikarhashabat" },
-  { name: "כל רגע", url: "https://rsshub.app/telegram/channel/kollrega" },
-  { name: "קול חי", url: "https://rsshub.app/telegram/channel/kolhai" },
-  { name: "מבזק לייב", url: "https://rsshub.app/telegram/channel/MivzakLive" },
-  { name: "פיקוד העורף", url: "https://rsshub.app/telegram/channel/PikudHaoref_official" },
-  { name: "זק״א", url: "https://rsshub.app/telegram/channel/zakahq" },
-  { name: "איחוד הצלה", url: "https://rsshub.app/telegram/channel/UnitedHatzalahIL" },
-  { name: "מגן דוד אדום", url: "https://rsshub.app/telegram/channel/mda_israel" },
-  { name: "הלכה יומית", url: "https://rsshub.app/telegram/channel/halachayomit" },
-  { name: "הדף היומי", url: "https://rsshub.app/telegram/channel/hadafyomi_il" }
+  { name: "עמית סגל", url: "https://t.me/s/amitsegal", type: "telegram" },
+  { name: "ינון מגל", url: "https://t.me/s/yinonmagal", type: "telegram" },
+  { name: "יאיר שרקי", url: "https://t.me/s/yaircherki", type: "telegram" },
+  { name: "ישי כהן", url: "https://t.me/s/ishaycoen", type: "telegram" },
+  { name: "אבי רבינא", url: "https://t.me/s/AviRabina", type: "telegram" },
+  { name: "מיכאל שמש", url: "https://t.me/s/michaelshemesh", type: "telegram" },
+  { name: "דורון קדוש (צבא)", url: "https://t.me/s/doron_kadosh", type: "telegram" },
+  { name: "כיכר השבת", url: "https://t.me/s/kikarhashabat", type: "telegram" },
+  { name: "כל רגע", url: "https://t.me/s/kollrega", type: "telegram" },
+  { name: "קול חי", url: "https://t.me/s/kolhai", type: "telegram" },
+  { name: "מבזק לייב", url: "https://t.me/s/MivzakLive", type: "telegram" },
+  { name: "פיקוד העורף", url: "https://t.me/s/PikudHaoref_official", type: "telegram" },
+  { name: "זק״א", url: "https://t.me/s/zakahq", type: "telegram" },
+  { name: "איחוד הצלה", url: "https://t.me/s/UnitedHatzalahIL", type: "telegram" },
+  { name: "מגן דוד אדום", url: "https://t.me/s/mda_israel", type: "telegram" },
+  { name: "הלכה יומית", url: "https://t.me/s/halachayomit", type: "telegram" },
+  { name: "הדף היומי", url: "https://t.me/s/hadafyomi_il", type: "telegram" }
 ];
 
+// פונקציה לניקוי טקסט מ-HTML והפיכתו לקריא
+function decodeHtml(html) {
+  return html
+    .replace(/<br\s*\/?>/gi, ' | ') // הופך ירידות שורה למפריד יפה
+    .replace(/<[^>]*>?/gm, '')      // מסיר את כל שאר תגיות ה-HTML
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .trim();
+}
+
 async function fetchNews() {
-  console.log(`[${new Date().toLocaleTimeString('he-IL')}] מתחיל סבב משיכת נתונים...`);
+  console.log(`[${new Date().toLocaleTimeString('he-IL')}] מתחיל סבב משיכת נתונים ישיר...`);
   let allMessages = [];
 
   for (const channel of channels) {
     try {
       const controller = new AbortController();
-      // הגדלנו ל-15 שניות כדי שלטלגרם יהיה זמן לענות
-      const timeoutId = setTimeout(() => controller.abort(), 15000); 
+      const timeoutId = setTimeout(() => controller.abort(), 10000); 
       
-      // שימוש בהגדרות תקניות כדי למנוע חסימה מצד Cloudflare
       const response = await fetch(channel.url, { 
         signal: controller.signal,
-        cache: 'no-store', // אומר לדפדפן לא להשתמש בזיכרון הישן
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7'
         }
       });
       clearTimeout(timeoutId);
       
       if (response.ok) {
         const text = await response.text();
-        const itemRegex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<\/item>/gi;
-        let match;
-        let count = 0;
         
-        while ((match = itemRegex.exec(text)) !== null && count < 2) {
-          let title = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
-          allMessages.push({ text: title, source: channel.name });
-          count++;
+        if (channel.type === "telegram") {
+          // חילוץ ישיר מדף האינטרנט של טלגרם!
+          const tgRegex = /<div class="tgme_widget_message_text[^>]*>(.*?)<\/div>/gi;
+          let match;
+          let tempMessages = [];
+          
+          while ((match = tgRegex.exec(text)) !== null) {
+            let cleanText = decodeHtml(match[1]);
+            if (cleanText.length > 5) { // סינון הודעות ריקות מדי
+              tempMessages.push(cleanText);
+            }
+          }
+          
+          // בטלגרם ההודעות הכי חדשות נמצאות בתחתית הדף
+          // ניקח את ה-2 האחרונות ונהפוך אותן
+          const latestMessages = tempMessages.slice(-2).reverse();
+          latestMessages.forEach(msg => {
+            allMessages.push({ text: msg, source: channel.name });
+          });
+
+        } else if (channel.type === "rss") {
+          // משיכת RSS רגילה לאתרי אינטרנט
+          const itemRegex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<\/item>/gi;
+          let match;
+          let count = 0;
+          
+          while ((match = itemRegex.exec(text)) !== null && count < 2) {
+            let title = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
+            allMessages.push({ text: decodeHtml(title), source: channel.name });
+            count++;
+          }
         }
       }
     } catch (e) {
-      // במקרה של שגיאה מדלגים וממשיכים לערוץ הבא
+      console.log(`שגיאה בערוץ ${channel.name}: דילוג.`);
     }
     
-    // המתנה של חצי שנייה בין כל בקשה למניעת עומס
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // המתנה של 400 אלפיות השנייה בין בקשה לבקשה
+    await new Promise(resolve => setTimeout(resolve, 400));
   }
 
   if (allMessages.length > 0) {
     cachedMessages = allMessages;
-    console.log(`סבב הסתיים בהצלחה. הזיכרון עודכן עם ${cachedMessages.length} הודעות.`);
+    console.log(`סבב הסתיים. הזיכרון עודכן עם ${cachedMessages.length} הודעות מדויקות.`);
   } else {
-    console.log(`לא התקבלו הודעות חדשות (ייתכן עומס רשת). שומר על הזיכרון הקיים.`);
+    console.log(`לא התקבלו הודעות (עומס רשת). שומר על הזיכרון הקיים.`);
   }
 
-  // תזמון חכם: מפעילים את הסבב הבא 60 שניות *אחרי* שהסבב הנוכחי הסתיים
+  // ממתינים 60 שניות *מסיום הסבב* ומתחילים מחדש
   setTimeout(fetchNews, 60 * 1000);
 }
 
-// הפעלה ראשונית
 fetchNews();
 
 app.get('/', (req, res) => {
