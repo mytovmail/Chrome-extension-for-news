@@ -7,9 +7,8 @@ app.use(cors());
 
 let cachedMessages = [];
 
-// הרשימה הענקית - כולל כל ערוצי המבזקים מסביב לשעון שביקשת
+// הרשימה הענקית - כולל כל ערוצי המבזקים ואתרי החדשות
 const channels = [
-  // חדשות ואתרים מרכזיים
   { name: "JDN חדשות (אתר)", url: "https://www.jdn.co.il/feed/" },
   { name: "ערוץ 7 (אתר)", url: "https://www.inn.co.il/Rss.aspx?Category=1" },
   { name: "ערוץ 14 (אתר)", url: "https://www.now14.co.il/feed/" },
@@ -17,7 +16,6 @@ const channels = [
   { name: "המחדש (אתר)", url: "https://hm-news.co.il/feed/" },
   { name: "בחדרי חרדים (אתר)", url: "https://www.bhol.co.il/rss.xml" },
   
-  // ערוצי מבזקים אקטיביים מסביב לשעון
   { name: "301 העולם הערבי", url: "https://rsshub.app/telegram/channel/arabworld301" },
   { name: "המוקד", url: "https://rsshub.app/telegram/channel/hamoked_il" },
   { name: "מבזקי בטחון 24/7", url: "https://rsshub.app/telegram/channel/mivzakeybitachon" },
@@ -32,7 +30,6 @@ const channels = [
   { name: "צ'אט הכתבים (N12)", url: "https://rsshub.app/telegram/channel/N12chat" },
   { name: "חדשות 25", url: "https://rsshub.app/telegram/channel/news25" },
   
-  // עיתונאים, חסד ורבנים (מהרשימה הקודמת)
   { name: "עמית סגל", url: "https://rsshub.app/telegram/channel/amitsegal" },
   { name: "ינון מגל", url: "https://rsshub.app/telegram/channel/yinonmagal" },
   { name: "יאיר שרקי", url: "https://rsshub.app/telegram/channel/yaircherki" },
@@ -53,20 +50,23 @@ const channels = [
 ];
 
 async function fetchNews() {
-  console.log(`[${new Date().toLocaleTimeString('he-IL')}] מושך נתונים מזמן אמת...`);
+  console.log(`[${new Date().toLocaleTimeString('he-IL')}] מתחיל סבב משיכת נתונים...`);
   let allMessages = [];
 
   for (const channel of channels) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000); 
+      // הגדלנו ל-15 שניות כדי שלטלגרם יהיה זמן לענות
+      const timeoutId = setTimeout(() => controller.abort(), 15000); 
       
-      // הוספנו בסוף הכתובת ?t=... כדי לשבור את המטמון של RSSHub ולהכריח אותם להביא מידע של השנייה האחרונה
-      const bypassCacheUrl = channel.url.includes('?') ? 
-        `${channel.url}&t=${Date.now()}` : 
-        `${channel.url}?t=${Date.now()}`;
-
-      const response = await fetch(bypassCacheUrl, { signal: controller.signal });
+      // שימוש בהגדרות תקניות כדי למנוע חסימה מצד Cloudflare
+      const response = await fetch(channel.url, { 
+        signal: controller.signal,
+        cache: 'no-store', // אומר לדפדפן לא להשתמש בזיכרון הישן
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
       clearTimeout(timeoutId);
       
       if (response.ok) {
@@ -82,23 +82,26 @@ async function fetchNews() {
         }
       }
     } catch (e) {
-      // דילוג על שגיאות בערוץ ספציפי כדי לשמור על יציבות השרת
+      // במקרה של שגיאה מדלגים וממשיכים לערוץ הבא
     }
     
-    // משהים ל-500 אלפיות השנייה כדי לא להיחסם בעצמנו על הצפה
+    // המתנה של חצי שנייה בין כל בקשה למניעת עומס
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 
   if (allMessages.length > 0) {
     cachedMessages = allMessages;
-    console.log(`משיכה הסתיימה בהצלחה. הזיכרון עודכן עם ${cachedMessages.length} הודעות.`);
+    console.log(`סבב הסתיים בהצלחה. הזיכרון עודכן עם ${cachedMessages.length} הודעות.`);
   } else {
-    console.log(`לא התקבלו הודעות (עומס זמני). שומר על הזיכרון הקיים.`);
+    console.log(`לא התקבלו הודעות חדשות (ייתכן עומס רשת). שומר על הזיכרון הקיים.`);
   }
+
+  // תזמון חכם: מפעילים את הסבב הבא 60 שניות *אחרי* שהסבב הנוכחי הסתיים
+  setTimeout(fetchNews, 60 * 1000);
 }
 
+// הפעלה ראשונית
 fetchNews();
-setInterval(fetchNews, 60 * 1000); // רץ פעם בדקה בדיוק!
 
 app.get('/', (req, res) => {
   res.json(cachedMessages);
