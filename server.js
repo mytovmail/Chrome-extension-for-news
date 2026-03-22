@@ -2,31 +2,57 @@ const express = require('express');
 const cors = require('cors');
 
 const app = express();
-app.use(cors()); // מאפשר לתוסף שלנו לגשת לנתונים
+app.use(cors()); 
 
-// זהו "זיכרון השרת" - כאן נשמור את ההודעות כדי להגיש אותן במהירות שיא
 let cachedMessages = [];
 
-// רשימת הערוצים (הדבק כאן את הרשימה המלאה שלך)
+// הרשימה הענקית המלאה של כל הערוצים
 const channels = [
   { name: "JDN חדשות (אתר)", url: "https://www.jdn.co.il/feed/" },
   { name: "ערוץ 7 (אתר)", url: "https://www.inn.co.il/Rss.aspx?Category=1" },
+  { name: "ערוץ 14 (אתר)", url: "https://www.now14.co.il/feed/" },
+  { name: "סרוגים (אתר)", url: "https://www.srugim.co.il/feed" },
+  { name: "המחדש (אתר)", url: "https://hm-news.co.il/feed/" },
+  { name: "בחדרי חרדים (אתר)", url: "https://www.bhol.co.il/rss.xml" },
   { name: "עמית סגל", url: "https://rsshub.app/telegram/channel/amitsegal" },
+  { name: "ינון מגל", url: "https://rsshub.app/telegram/channel/yinonmagal" },
+  { name: "יאיר שרקי", url: "https://rsshub.app/telegram/channel/yaircherki" },
+  { name: "ישי כהן", url: "https://rsshub.app/telegram/channel/ishaycoen" },
+  { name: "אבי רבינא", url: "https://rsshub.app/telegram/channel/AviRabina" },
+  { name: "מיכאל שמש", url: "https://rsshub.app/telegram/channel/michaelshemesh" },
+  { name: "עקיבא נוביק", url: "https://rsshub.app/telegram/channel/akivanovick" },
+  { name: "ירון אברהם", url: "https://rsshub.app/telegram/channel/yaronavraham" },
+  { name: "דורון קדוש (צבא)", url: "https://rsshub.app/telegram/channel/doron_kadosh" },
+  { name: "JDN (טלגרם)", url: "https://rsshub.app/telegram/channel/JDN_News" },
   { name: "כיכר השבת", url: "https://rsshub.app/telegram/channel/kikarhashabat" },
   { name: "כל רגע", url: "https://rsshub.app/telegram/channel/kollrega" },
-  { name: "קול חי", url: "https://rsshub.app/telegram/channel/kolhai" }
+  { name: "חדשות הסקופים", url: "https://rsshub.app/telegram/channel/hascoopim" },
+  { name: "קול חי", url: "https://rsshub.app/telegram/channel/kolhai" },
+  { name: "קול ברמה", url: "https://rsshub.app/telegram/channel/kolbarama" },
+  { name: "מבזק לייב", url: "https://rsshub.app/telegram/channel/MivzakLive" },
+  { name: "הקול היהודי", url: "https://rsshub.app/telegram/channel/hakolhayehudi" },
+  { name: "חדשות 0404", url: "https://rsshub.app/telegram/channel/news0404" },
+  { name: "פיקוד העורף", url: "https://rsshub.app/telegram/channel/PikudHaoref_official" },
+  { name: "זק״א", url: "https://rsshub.app/telegram/channel/zakahq" },
+  { name: "איחוד הצלה", url: "https://rsshub.app/telegram/channel/UnitedHatzalahIL" },
+  { name: "מגן דוד אדום", url: "https://rsshub.app/telegram/channel/mda_israel" },
+  { name: "משטרת ישראל", url: "https://rsshub.app/telegram/channel/police_israel" },
+  { name: "כבאות והצלה", url: "https://rsshub.app/telegram/channel/fire_israel" },
+  { name: "הלכה יומית", url: "https://rsshub.app/telegram/channel/halachayomit" },
+  { name: "הרב יצחק יוסף", url: "https://rsshub.app/telegram/channel/haravyitzchak" },
+  { name: "הרב מאיר אליהו", url: "https://rsshub.app/telegram/channel/haravmeireliyahu" },
+  { name: "הרב זמיר כהן", url: "https://rsshub.app/telegram/channel/zamircohen_official" },
+  { name: "הדף היומי", url: "https://rsshub.app/telegram/channel/hadafyomi_il" }
 ];
 
-// הפונקציה ששואבת את החדשות
 async function fetchNews() {
   console.log(`[${new Date().toLocaleTimeString('he-IL')}] מושך נתונים מהערוצים...`);
   let allMessages = [];
 
   const fetchPromises = channels.map(async (channel) => {
     try {
-      // שימוש ב-AbortController כדי למנוע היתקעות השרת בגלל ערוץ שקרס
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); 
+      const timeoutId = setTimeout(() => controller.abort(), 6000); 
       
       const response = await fetch(channel.url, { signal: controller.signal });
       clearTimeout(timeoutId);
@@ -44,32 +70,23 @@ async function fetchNews() {
         count++;
       }
     } catch (e) {
-      // מתעלמים באלגנטיות משגיאה בערוץ ספציפי כדי לא לעצור את שאר העדכונים
+      // דילוג על שגיאות בערוץ ספציפי
     }
   });
 
   await Promise.allSettled(fetchPromises);
-  
-  // עדכון הזיכרון של השרת עם הנתונים הטריים
   cachedMessages = allMessages;
-  console.log(`משיכה הסתיימה. הזיכרון עודכן עם ${cachedMessages.length} הודעות.`);
+  console.log(`משיכה הסתיימה. נשמרו ${cachedMessages.length} הודעות.`);
 }
 
-// 1. הפעלה ראשונית מיד כשהשרת עולה
 fetchNews();
+setInterval(fetchNews, 60 * 1000); // רץ פעם בדקה
 
-// 2. הגדרת טיימר פנימי: ירוץ כל 60 שניות בדיוק! (זמן אמת)
-setInterval(fetchNews, 60 * 1000);
-
-// הכתובת שהתוסף פונה אליה
 app.get('/', (req, res) => {
-  // ברגע שמשתמש פונה, אנחנו ישר מחזירים לו את המשתנה מהזיכרון. 
-  // ללא המתנה וללא קריאות רשת נוספות!
   res.json(cachedMessages);
 });
 
-// הפעלת השרת על הפורט הפנוי
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`השרת רץ ומוכן על פורט ${PORT}`);
+  console.log(`השרת מוכן על פורט ${PORT}`);
 });
