@@ -7,7 +7,6 @@ app.use(cors());
 
 let cachedMessages = [];
 
-// רשימת הערוצים החדשה - שימוש בגישה ישירה לטלגרם (t.me/s/) ללא מתווכים!
 const channels = [
   // אתרי אינטרנט (RSS)
   { name: "JDN חדשות (אתר)", url: "https://www.jdn.co.il/feed/", type: "rss" },
@@ -15,8 +14,9 @@ const channels = [
   { name: "ערוץ 14 (אתר)", url: "https://www.now14.co.il/feed/", type: "rss" },
   { name: "סרוגים (אתר)", url: "https://www.srugim.co.il/feed", type: "rss" },
   { name: "המחדש (אתר)", url: "https://hm-news.co.il/feed/", type: "rss" },
+  { name: "בחדרי חרדים (אתר)", url: "https://www.bhol.co.il/rss.xml", type: "rss" },
   
-  // ערוצי טלגרם אקטיביים - גישה ישירה (HTML Scraping)
+  // ערוצי טלגרם (HTML)
   { name: "301 העולם הערבי", url: "https://t.me/s/arabworld301", type: "telegram" },
   { name: "המוקד", url: "https://t.me/s/hamoked_il", type: "telegram" },
   { name: "מבזקי בטחון 24/7", url: "https://t.me/s/mivzakeybitachon", type: "telegram" },
@@ -50,11 +50,10 @@ const channels = [
   { name: "הדף היומי", url: "https://t.me/s/hadafyomi_il", type: "telegram" }
 ];
 
-// פונקציה לניקוי טקסט מ-HTML והפיכתו לקריא
 function decodeHtml(html) {
   return html
-    .replace(/<br\s*\/?>/gi, ' | ') // הופך ירידות שורה למפריד יפה
-    .replace(/<[^>]*>?/gm, '')      // מסיר את כל שאר תגיות ה-HTML
+    .replace(/<br\s*\/?>/gi, ' | ') 
+    .replace(/<[^>]*>?/gm, '')      
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, '&')
     .replace(/&#39;/g, "'")
@@ -65,7 +64,7 @@ function decodeHtml(html) {
 }
 
 async function fetchNews() {
-  console.log(`[${new Date().toLocaleTimeString('he-IL')}] מתחיל סבב משיכת נתונים ישיר...`);
+  console.log(`[${new Date().toLocaleTimeString('he-IL')}] מתחיל סבב משיכת נתונים (כולל תמונות)...`);
   let allMessages = [];
 
   for (const channel of channels) {
@@ -86,35 +85,52 @@ async function fetchNews() {
         const text = await response.text();
         
         if (channel.type === "telegram") {
-          // חילוץ ישיר מדף האינטרנט של טלגרם!
-          const tgRegex = /<div class="tgme_widget_message_text[^>]*>(.*?)<\/div>/gi;
-          let match;
+          // חילוץ תמונות וטקסט מטלגרם
+          const bubbleRegex = /<div class="tgme_widget_message_bubble">([\s\S]*?)<div class="tgme_widget_message_info"/gi;
+          let bubbleMatch;
           let tempMessages = [];
           
-          while ((match = tgRegex.exec(text)) !== null) {
-            let cleanText = decodeHtml(match[1]);
-            if (cleanText.length > 5) { // סינון הודעות ריקות מדי
-              tempMessages.push(cleanText);
+          while ((bubbleMatch = bubbleRegex.exec(text)) !== null) {
+            let bubbleHtml = bubbleMatch[1];
+            
+            let textMatch = /<div class="tgme_widget_message_text[^>]*>(.*?)<\/div>/i.exec(bubbleHtml);
+            let imgMatch = /background-image:url\('([^']+)'\)/i.exec(bubbleHtml); // חילוץ התמונה מהסטייל
+
+            let cleanText = textMatch ? decodeHtml(textMatch[1]) : "";
+            let imageUrl = imgMatch ? imgMatch[1] : null;
+
+            if (cleanText.length > 5) { 
+              tempMessages.push({ text: cleanText, image: imageUrl });
             }
           }
           
-          // בטלגרם ההודעות הכי חדשות נמצאות בתחתית הדף
-          // ניקח את ה-2 האחרונות ונהפוך אותן
           const latestMessages = tempMessages.slice(-2).reverse();
           latestMessages.forEach(msg => {
-            allMessages.push({ text: msg, source: channel.name });
+            allMessages.push({ text: msg.text, source: channel.name, image: msg.image });
           });
 
         } else if (channel.type === "rss") {
-          // משיכת RSS רגילה לאתרי אינטרנט
-          const itemRegex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<\/item>/gi;
-          let match;
+          // חילוץ תמונות וטקסט מה-RSS
+          const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+          let itemMatch;
           let count = 0;
           
-          while ((match = itemRegex.exec(text)) !== null && count < 2) {
-            let title = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
-            allMessages.push({ text: decodeHtml(title), source: channel.name });
-            count++;
+          while ((itemMatch = itemRegex.exec(text)) !== null && count < 2) {
+            let itemHtml = itemMatch[1];
+            
+            let titleMatch = /<title>(.*?)<\/title>/i.exec(itemHtml);
+            let title = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim() : "";
+            
+            // חיפוש תמונה בתגיות נפוצות ב-RSS
+            let imgMatch = /<enclosure[^>]*url="([^"]+)"[^>]*type="image/i.exec(itemHtml) ||
+                           /<media:content[^>]*url="([^"]+)"/i.exec(itemHtml) ||
+                           /<img[^>]*src="([^"]+)"/i.exec(itemHtml);
+            let imageUrl = imgMatch ? imgMatch[1] : null;
+
+            if (title) {
+              allMessages.push({ text: decodeHtml(title), source: channel.name, image: imageUrl });
+              count++;
+            }
           }
         }
       }
@@ -122,18 +138,14 @@ async function fetchNews() {
       console.log(`שגיאה בערוץ ${channel.name}: דילוג.`);
     }
     
-    // המתנה של 400 אלפיות השנייה בין בקשה לבקשה
     await new Promise(resolve => setTimeout(resolve, 400));
   }
 
   if (allMessages.length > 0) {
     cachedMessages = allMessages;
-    console.log(`סבב הסתיים. הזיכרון עודכן עם ${cachedMessages.length} הודעות מדויקות.`);
-  } else {
-    console.log(`לא התקבלו הודעות (עומס רשת). שומר על הזיכרון הקיים.`);
+    console.log(`סבב הסתיים. הזיכרון עודכן עם ${cachedMessages.length} הודעות ותמונות.`);
   }
-
-  // ממתינים 60 שניות *מסיום הסבב* ומתחילים מחדש
+  
   setTimeout(fetchNews, 60 * 1000);
 }
 
