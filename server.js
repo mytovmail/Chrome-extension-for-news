@@ -9,7 +9,6 @@ let cachedMessages =[];
 
 // ==========================================
 // רשימת הערוצים הענקית (RSS + טלגרם)
-// שימו לב: השמות תואמים כעת ב-100% להגדרות התוסף
 // ==========================================
 const channels =[
   // --- אתרי חדשות מומלצים (RSS) ---
@@ -20,44 +19,104 @@ const channels =[
   { name: "המחדש (אתר)", url: "https://hm-news.co.il/feed/", type: "rss" },
   { name: "בחדרי חרדים (אתר)", url: "https://www.bhol.co.il/rss.xml", type: "rss" },
 
-  // --- כתבים ואנשי תקשורת (Telegram) ---
-  // זכור: הוסף /s/ לקישורים (לדוגמה: https://t.me/s/amitsegal)
-  { name: "עמית סגל", url: "", type: "telegram" },
-  { name: "ינון מגל", url: "", type: "telegram" },
-  { name: "יאיר שרקי", url: "", type: "telegram" },
-  { name: "מיכאל שמש", url: "", type: "telegram" },
-  { name: "אבי רבינא", url: "", type: "telegram" },
-  { name: "ישי כהן", url: "", type: "telegram" },
-  { name: "דורון קדוש (צבא)", url: "", type: "telegram" },
-
-  // --- ערוצי חדשות ומבזקים (Telegram) ---
-  { name: "צ'אט הכתבים (N12)", url: "", type: "telegram" },
-  { name: "כיכר השבת", url: "", type: "telegram" },
-  { name: "כל רגע", url: "", type: "telegram" },
-  { name: "חדשות ישראל", url: "", type: "telegram" },
-  { name: "חדשות קודקוד", url: "", type: "telegram" },
-  { name: "301 העולם הערבי", url: "", type: "telegram" },
-  { name: "זירת החדשות", url: "", type: "telegram" },
-  { name: "מבזקי בטחון 24/7", url: "", type: "telegram" },
-  { name: "המוקד", url: "", type: "telegram" },
-  { name: "קול חי", url: "", type: "telegram" },
-  { name: "חדשות הבזק", url: "", type: "telegram" },
-  { name: "זירה פוליטית", url: "", type: "telegram" },
-  { name: "החדשות החמות", url: "", type: "telegram" },
-  { name: "עדכונים ומבזקים", url: "", type: "telegram" },
-  { name: "הקו החרדי", url: "", type: "telegram" },
-  { name: "חדשות 25", url: "", type: "telegram" },
-  { name: "מבזק לייב", url: "", type: "telegram" },
-  
-  // --- הצלה וחירום (Telegram) ---
-  { name: "פיקוד העורף", url: "", type: "telegram" },
-  { name: "זק״א", url: "", type: "telegram" },
-  { name: "מגן דוד אדום", url: "", type: "telegram" },
-  { name: "איחוד הצלה", url: "", type: "telegram" },
-
-  // --- יהדות ודת ---
-  { name: "הלכה יומית", url: "", type: "telegram" },
-  { name: "הדף היומי", url: "", type: "telegram" }
+  // --- ערוצי טלגרם - רשימה מלאה (תוקן לפורמט התצוגה https://t.me/s/) ---
+  { name: "Ynet מבזקים", url: "https://t.me/s/ynetalert", type: "telegram" },
+  { name: "Ynet חדר החדשות", url: "https://t.me/s/ynetnewsroom", type: "telegram" },
+  { name: "N12 מתפרצות", url: "https://t.me/s/N12breaking", type: "telegram" },
+  { name: "N12 הצ'אט", url: "https://t.me/s/N12updates", type: "telegram" },
+  { name: "N12 פוליטי", url: "https://t.me/s/n12politics", type: "telegram" },
+  { name: "חדשות 13", url: "https://t.me/s/news13channel", type: "telegram" },
+  { name: "רשת 13", url: "https://t.me/s/reshet13", type: "telegram" },
+  { name: "וואלה! חדשות", url: "https://t.me/s/walla_news", type: "telegram" },
+  { name: "כאן חדשות", url: "https://t.me/s/kan_news", type: "telegram" },
+  { name: "כאן רשת ב'", url: "https://t.me/s/ReshetBet", type: "telegram" },
+  { name: "גל\"צ", url: "https://t.me/s/glzradio", type: "telegram" },
+  { name: "ישראל היום", url: "https://t.me/s/israelhayom", type: "telegram" },
+  { name: "מעריב", url: "https://t.me/s/maarivonline", type: "telegram" },
+  { name: "הארץ", url: "https://t.me/s/haaretz", type: "telegram" },
+  { name: "סרוגים", url: "https://t.me/s/srugim_news", type: "telegram" },
+  { name: "ערוץ 7", url: "https://t.me/s/inn_news", type: "telegram" },
+  { name: "גלובס", url: "https://t.me/s/globesnews", type: "telegram" },
+  { name: "כלכליסט", url: "https://t.me/s/calcalist", type: "telegram" },
+  { name: "דה מרקר", url: "https://t.me/s/the_marker", type: "telegram" },
+  { name: "עכשיו 14", url: "https://t.me/s/now14updates", type: "telegram" },
+  { name: "זמן ישראל", url: "https://t.me/s/zmaneyisrael", type: "telegram" },
+  { name: "כיכר השבת", url: "https://t.me/s/kikar_news", type: "telegram" },
+  { name: "JDN חדשות", url: "https://t.me/s/jdn_il", type: "telegram" },
+  { name: "בחדרי חרדים", url: "https://t.me/s/bholnews", type: "telegram" },
+  { name: "משטרת ישראל", url: "https://t.me/s/israelpolice", type: "telegram" },
+  { name: "דובר צה\"ל", url: "https://t.me/s/idfonline", type: "telegram" },
+  { name: "פיקוד העורף (רשמי)", url: "https://t.me/s/pikudhaoref", type: "telegram" },
+  { name: "משרד החוץ", url: "https://t.me/s/IsraelMFA", type: "telegram" },
+  { name: "פיקוד העורף (התרעות)", url: "https://t.me/s/homefrontcommand", type: "telegram" },
+  { name: "עמית סגל", url: "https://t.me/s/amitsegal", type: "telegram" },
+  { name: "ברק רביד", url: "https://t.me/s/barak_ravid", type: "telegram" },
+  { name: "ינון מגל", url: "https://t.me/s/yinonmagal", type: "telegram" },
+  { name: "בן כספית", url: "https://t.me/s/bencaspit", type: "telegram" },
+  { name: "אבי יששכרוף", url: "https://t.me/s/avi_issacharoff", type: "telegram" },
+  { name: "אור הלר", url: "https://t.me/s/or_heller", type: "telegram" },
+  { name: "ניר דבורי", url: "https://t.me/s/nir_dvori", type: "telegram" },
+  { name: "אלמוג בוקר", url: "https://t.me/s/almog_boker", type: "telegram" },
+  { name: "אלירן טל", url: "https://t.me/s/elirantal", type: "telegram" },
+  { name: "יואב אבן", url: "https://t.me/s/yoaveven", type: "telegram" },
+  { name: "יאיר שרקי", url: "https://t.me/s/yaircherki", type: "telegram" },
+  { name: "סיון רהב מאיר", url: "https://t.me/s/sivanrahav", type: "telegram" },
+  { name: "משה נוסבאום", url: "https://t.me/s/moshenuss", type: "telegram" },
+  { name: "מיקי רוזנפלד", url: "https://t.me/s/mickyrosenfeld", type: "telegram" },
+  { name: "ליאור דיין", url: "https://t.me/s/liordayan", type: "telegram" },
+  { name: "אבי בניהו", url: "https://t.me/s/avibenayahu", type: "telegram" },
+  { name: "יוסי יהושוע", url: "https://t.me/s/yossi_yehoshua", type: "telegram" },
+  { name: "איתי בלומנטל", url: "https://t.me/s/itayblumental", type: "telegram" },
+  { name: "מתן חודורוב", url: "https://t.me/s/matanhodorov", type: "telegram" },
+  { name: "עמרי מניב", url: "https://t.me/s/omrimaniv", type: "telegram" },
+  { name: "יהודה שלזינגר", url: "https://t.me/s/yehudatimes", type: "telegram" },
+  { name: "אריק בנדר", url: "https://t.me/s/arikbender", type: "telegram" },
+  { name: "שמעון ריקלין", url: "https://t.me/s/shimon_riklin", type: "telegram" },
+  { name: "יאיר קראוס", url: "https://t.me/s/yairkraus", type: "telegram" },
+  { name: "הדס גרינברג", url: "https://t.me/s/hadas_greenberg", type: "telegram" },
+  { name: "תומר גנון", url: "https://t.me/s/tomer_ganon", type: "telegram" },
+  { name: "דה לייב ניוז", url: "https://t.me/s/thelivenews", type: "telegram" },
+  { name: "ישראל עכשיו", url: "https://t.me/s/israelnow", type: "telegram" },
+  { name: "ריל-טיים", url: "https://t.me/s/realtimeisrael", type: "telegram" },
+  { name: "רו ניוז (Raw)", url: "https://t.me/s/rawnewsisrael", type: "telegram" },
+  { name: "אינסטנט ניוז", url: "https://t.me/s/instant_news_il", type: "telegram" },
+  { name: "חדשות ישראל 24", url: "https://t.me/s/newsisrael24", type: "telegram" },
+  { name: "ישראל ריפורט", url: "https://t.me/s/israel_report", type: "telegram" },
+  { name: "ישראל ברייקינג", url: "https://t.me/s/israelbreaking", type: "telegram" },
+  { name: "ירושלים עדכונים", url: "https://t.me/s/jerusalem_updates", type: "telegram" },
+  { name: "תל אביב עדכונים", url: "https://t.me/s/tlvupdates", type: "telegram" },
+  { name: "חיפה חדשות", url: "https://t.me/s/haifa_news", type: "telegram" },
+  { name: "באר שבע חדשות", url: "https://t.me/s/beer_sheva_news", type: "telegram" },
+  { name: "אשדוד חדשות", url: "https://t.me/s/ashdodnews", type: "telegram" },
+  { name: "אשקלון עדכונים", url: "https://t.me/s/ashkelonupdates", type: "telegram" },
+  { name: "מודיעין חדשות", url: "https://t.me/s/modiinnews", type: "telegram" },
+  { name: "פתח תקווה חדשות", url: "https://t.me/s/ptk_news", type: "telegram" },
+  { name: "ראשון לציון חדשות", url: "https://t.me/s/rishonnews", type: "telegram" },
+  { name: "גוש דן התרעות", url: "https://t.me/s/gushdanalerts", type: "telegram" },
+  { name: "חדשות הצפון", url: "https://t.me/s/northnewsisrael", type: "telegram" },
+  { name: "חדשות הדרום", url: "https://t.me/s/south_news_il", type: "telegram" },
+  { name: "חדשות המרכז", url: "https://t.me/s/center_news_il", type: "telegram" },
+  { name: "חרדים חדשות", url: "https://t.me/s/haredinews", type: "telegram" },
+  { name: "חותם", url: "https://t.me/s/chotamnews", type: "telegram" },
+  { name: "קול ברמה", url: "https://t.me/s/kolbarama", type: "telegram" },
+  { name: "קול חי", url: "https://t.me/s/kolhai", type: "telegram" },
+  { name: "עיריית ירושלים", url: "https://t.me/s/jerusalemmuni", type: "telegram" },
+  { name: "עיריית תל אביב", url: "https://t.me/s/telavivcity", type: "telegram" },
+  { name: "עיריית חיפה", url: "https://t.me/s/haifa_city", type: "telegram" },
+  { name: "עדכוני כנסת", url: "https://t.me/s/knesset_updates", type: "telegram" },
+  { name: "משרד ראש הממשלה", url: "https://t.me/s/IsraeliPM", type: "telegram" },
+  { name: "המל\"ל", url: "https://t.me/s/nsc_israel", type: "telegram" },
+  { name: "RTV ישראל", url: "https://t.me/s/rtvisrael", type: "telegram" },
+  { name: "ILTV (אנגלית)", url: "https://t.me/s/iltvnews", type: "telegram" },
+  { name: "ישראל גלובל", url: "https://t.me/s/israelglobalnews", type: "telegram" },
+  { name: "מדיה ווטש", url: "https://t.me/s/mediawatch_il", type: "telegram" },
+  { name: "עדכונים 24/7", url: "https://t.me/s/updates_il", type: "telegram" },
+  { name: "ברייקינג איי-אל", url: "https://t.me/s/breaking_il", type: "telegram" },
+  { name: "דיילי ישראל", url: "https://t.me/s/dailyisraelupdates", type: "telegram" },
+  { name: "24 ניוז", url: "https://t.me/s/israel24news", type: "telegram" },
+  { name: "דיווח ראשוני", url: "https://t.me/s/firstreport_il", type: "telegram" },
+  { name: "ישראל פלאש", url: "https://t.me/s/israelflash", type: "telegram" },
+  { name: "פאסט ניוז", url: "https://t.me/s/fastnews_il", type: "telegram" }
 ];
 
 function decodeHtml(html) {
@@ -81,10 +140,10 @@ async function fetchSingleChannel(channel) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 שניות טיימאאוט למניעת תקיעות
     
-    // אם אין קישור (כי עדיין לא מילאת), דלג על הערוץ
+    // אם אין קישור (לא אמור לקרות עכשיו, אבל שיהיה להגנה), דלג על הערוץ
     if (!channel.url || channel.url.trim() === "") {
       clearTimeout(timeoutId);
-      return [];
+      return[];
     }
 
     const response = await fetch(channel.url, { 
@@ -97,7 +156,7 @@ async function fetchSingleChannel(channel) {
     });
     clearTimeout(timeoutId);
     
-    if (!response.ok) return [];
+    if (!response.ok) return[];
 
     const text = await response.text();
     let parsedMessages =[];
@@ -146,52 +205,13 @@ async function fetchSingleChannel(channel) {
     return parsedMessages;
 
   } catch (e) {
-    // במקרה של שגיאה (למשל Timeout), מחזירים מערך ריק כדי שהשרת לא יקרוס
-    return [];
+    // במקרה של שגיאה (למשל Timeout או חסימה זמנית), מחזירים מערך ריק כדי שהשרת לא יקרוס
+    return[];
   }
 }
 
-// לולאה ראשית - שואבת נתונים במנות (Chunks)
+// לולאה ראשית - שואבת נתונים במנות (Chunks) להגנה על משאבי השרת
 async function fetchNews() {
-  console.log(`[${new Date().toLocaleTimeString('he-IL')}] מתחיל סבב משיכת נתונים...`);
+  console.log(`[${new Date().toLocaleTimeString('he-IL')}] מתחיל סבב משיכת נתונים (${channels.length} מקורות)...`);
   
-  let allMessages =[];
-  const chunkSize = 10; // מושכים 10 ערוצים במקביל
-
-  for (let i = 0; i < channels.length; i += chunkSize) {
-    const chunk = channels.slice(i, i + chunkSize);
-    
-    const results = await Promise.all(chunk.map(channel => fetchSingleChannel(channel)));
-    
-    results.forEach(channelMessages => {
-      allMessages.push(...channelMessages);
-    });
-
-    // השהייה קטנטנה של חצי שנייה בין מנה למנה
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-
-  if (allMessages.length > 0) {
-    cachedMessages = allMessages;
-    console.log(`סבב הסתיים בהצלחה. סה"כ הודעות במערכת: ${cachedMessages.length}`);
-  }
-  
-  setTimeout(fetchNews, 60 * 1000);
-}
-
-// הפעלה ראשונית
-fetchNews();
-
-// נתיבי ה-API
-app.get('/', (req, res) => {
-  res.json(cachedMessages);
-});
-
-app.get('/ping', (req, res) => {
-  res.send('pong');
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`השרת מוכן על פורט ${PORT}`);
-});
+  let allMessages =
