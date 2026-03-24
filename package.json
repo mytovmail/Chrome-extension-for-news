@@ -1,16 +1,14 @@
 {
-  "name": "news-alerts-server",
+  "name": "news-server",
   "version": "1.0.0",
-  "description": "שרת עדכונים מהיר מבוסס זיכרון",
+  "description": "News Aggregator Server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
+    "express": "^4.18.2",
     "cors": "^2.8.5",
-    "express": "^4.18.2"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "node-fetch": "^3.3.1"
   }
 }
