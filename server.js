@@ -27,7 +27,7 @@ const channels = [
   { name: "גלובס", url: "https://t.me/s/globesnews", type: "telegram" },
   { name: "עכשיו 14", url: "https://t.me/s/now14updates", type: "telegram" },
   { name: "כיכר השבת", url: "https://t.me/s/kikar_news", type: "telegram" },
-  { name: "דובר צה\"ל", url: "https://t.me/s/idfonline", type: "telegram" },
+  { name: "דובר צה"ל", url: "https://t.me/s/idfonline", type: "telegram" },
   { name: "פיקוד העורף", url: "https://t.me/s/pikudhaoref", type: "telegram" },
   { name: "עמית סגל", url: "https://t.me/s/amitsegal", type: "telegram" },
   { name: "ינון מגל", url: "https://t.me/s/yinonmagal", type: "telegram" },
