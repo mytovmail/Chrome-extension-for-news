@@ -13,9 +13,16 @@ const { Raw } = require('telegram/events');
 const app = express();
 app.use(cors());
 
+// הגדרת כותרות דפדפן עשירות והגדלת ה-Timeout למעקף חסימות RSS ו-403
 const parser = new Parser({
-    timeout: 8000,
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    timeout: 10000, // 10 שניות
+    headers: { 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+    }
 });
 
 let newsList = [];
@@ -104,11 +111,7 @@ function broadcast(newsItem, telegramDate) {
 // רישום ערוצים - מעקב לפי lastMsgId
 // ==========================================
 
-// method: 'push' = listener עובד בזמן אמת
-//         'poll' = צריך שאיבה אקטיבית סדרתית
 const channelRegistry = new Map();
-// { name, entity, method, lastMsgId, lastPollTime }
-
 const entityCache = new Map();
 
 function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
@@ -124,19 +127,32 @@ function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
         if (line.trim()) filteredLines.push(line);
     }
 
-    let title = filteredLines[0] || '';
-    let content = filteredLines.slice(1).join('\n') || '';
-    if (title.length > 80) {
-        content = title.substring(80) + (content ? '\n' + content : '');
-        title = title.substring(0, 80) + '...';
+    if (filteredLines.length === 0) return null;
+
+    let title = '';
+    let content = '';
+
+    // פתרון מקצועי: מניעת יצירת כותרת מדומה לפוסט שמכיל שורה אחת בלבד
+    if (filteredLines.length === 1) {
+        content = filteredLines[0];
+    } else {
+        title = filteredLines[0];
+        content = filteredLines.slice(1).join('\n');
+
+        // פתרון מקצועי: מניעת קטיעת מילים באמצע בעת חיתוך כותרת ארוכה
+        if (title.length > 80) {
+            let cutIndex = title.lastIndexOf(' ', 80);
+            if (cutIndex === -1) cutIndex = 80; // fallback
+            content = title.substring(cutIndex).trim() + (content ? '\n' + content : '');
+            title = title.substring(0, cutIndex).trim() + '...';
+        }
     }
-    if (!title && !content) return null;
 
     const idClean = channelIdStr ? channelIdStr.toString().replace('-100', '') : '';
     return {
         hash: generateHash(rawText + channelName + (message.id || '')),
         title, content,
-        link: idClean ? `https://t.me/c/${idClean}/${message.id}` : '#',
+        link: idClean ? `               ${idClean}/${message.id}` : '#',
         source: channelName + (isEdited ? ' [ערוך]' : ''),
         imageUrl: null,
         time: new Date((message.date || Math.floor(Date.now() / 1000)) * 1000).toISOString()
@@ -159,7 +175,6 @@ function addNewsItem(item, telegramDate) {
 let pollIndex = 0;
 let isPolling = false;
 
-// שאיבת ערוץ יחיד בלבד - min_id מונע כפילויות וFloodWait
 async function pollOneChannel(client) {
     if (isPolling) return;
 
@@ -168,15 +183,12 @@ async function pollOneChannel(client) {
 
     if (pollChannels.length === 0) return;
 
-    // רוטציה: כל קריאה מטפלת בערוץ הבא בתור
     pollIndex = pollIndex % pollChannels.length;
     const [channelId, state] = pollChannels[pollIndex];
     pollIndex++;
 
     isPolling = true;
     try {
-        // min_id = קריטי! טלגרם מחזיר רק הודעות חדשות מה-id הזה ואילך
-        // בלי זה - שאיבת הכל מחדש בכל פעם = FloodWait
         const msgs = await client.getMessages(state.entity, {
             limit: 5,
             min_id: state.lastMsgId || 0
@@ -188,7 +200,6 @@ async function pollOneChannel(client) {
             return;
         }
 
-        // מיון מישן לחדש
         const sorted = [...msgs].sort((a, b) => a.id - b.id);
         let newCount = 0;
 
@@ -196,10 +207,8 @@ async function pollOneChannel(client) {
             if (!msg?.message) continue;
             if (msg.id <= (state.lastMsgId || 0)) continue;
 
-            // עדכון lastMsgId תמיד, גם אם ההודעה ישנה
             if (msg.id > (state.lastMsgId || 0)) state.lastMsgId = msg.id;
 
-            // סינון הודעות ישנות מדי (מעל 5 דקות - הפולינג רץ מהר)
             const age = Date.now() - msg.date * 1000;
             if (age > 5 * 60 * 1000) continue;
 
@@ -214,9 +223,7 @@ async function pollOneChannel(client) {
         if (e.message?.includes('FLOOD_WAIT')) {
             const wait = parseInt(e.message.match(/\d+/)?.[0] || '10');
             console.warn(`⏳ FloodWait ${wait}s על ${state.name} - מדלג`);
-            // לא מחכים - פשוט מדלגים לערוץ הבא בפעם הבאה
             state.method = 'poll_paused';
-            // חזרה אחרי המתנה
             setTimeout(() => { state.method = 'poll'; }, (wait + 5) * 1000);
         } else {
             console.warn(`[poll] ${state.name}: ${e.message}`);
@@ -226,8 +233,6 @@ async function pollOneChannel(client) {
     isPolling = false;
 }
 
-// הלולאה הראשית: ערוץ אחד כל 2 שניות = מחזור שלם על 33 ערוצים כל ~66 שניות
-// זה בטוח מFloodWait וגם מספיק מהיר
 function startSerialPolling(client) {
     setInterval(() => pollOneChannel(client), 2000);
 }
@@ -242,19 +247,26 @@ async function startTelegramClient() {
     }
 
     try {
+        // הגדרות חיבור מאובטחות וניסיונות תקשורת מורחבים
         const client = new TelegramClient(new StringSession(sessionString), apiId, apiHash, {
-            connectionRetries: 10,
-            retryDelay: 2000,
+            connectionRetries: 15,
+            retryDelay: 3000,
             autoReconnect: true,
-            floodSleepThreshold: 60,
+            floodSleepThreshold: 90,
             receiveUpdates: true,
+            useWSS: true // שימוש בחיבורי Socket מאובטחים
         });
 
         await client.connect();
         await client.getMe();
         console.log("✅ מחובר לטלגרם!");
 
-        // ── טעינת דיאלוגים + lastMsgId ראשוני ──
+        // מניעת זליגת זיכרון: במקרה של כשל רשת מתמשך, נסיים את התהליך ונאפשר ל-Render להרים מכולה חדשה ורעננה בתוך שניות
+        client.on('disconnect', () => {
+            console.warn("❌ החיבור לשרתי טלגרם אבד לחלוטין. מאתחל את המכולה (Container)...");
+            setTimeout(() => process.exit(1), 1000);
+        });
+
         console.log("⏳ טוען דיאלוגים...");
         const dialogs = await client.getDialogs({ limit: 500 });
 
@@ -266,14 +278,11 @@ async function startTelegramClient() {
 
             entityCache.set(id, name);
 
-            // topMessage = ה-id של ההודעה האחרונה בדיאלוג
-            // זה הנקודה שממנה נתחיל לשאוב — לא נשאב שום דבר ישן
             const lastMsgId = dialog.dialog?.topMessage || 0;
 
             channelRegistry.set(id, {
                 name,
                 entity: dialog.entity,
-                // מתחיל כ-push. הwatchdog יעביר ל-poll אם לא שמענו בזמן.
                 method: 'push',
                 lastMsgId,
                 lastPollTime: null
@@ -282,15 +291,11 @@ async function startTelegramClient() {
 
         console.log(`✅ נטענו ${channelRegistry.size} ערוצים | topMessage אותחל לכולם`);
 
-        // ── Watchdog: ערוץ שקט > 90 שניות → poll ──
-        // 90 שניות = זמן סביר שאחריו ברור שה-push לא עובד לערוץ זה
         setInterval(() => {
             const now = Date.now();
             let switched = 0;
             for (const [, state] of channelRegistry.entries()) {
                 if (state.method === 'push') {
-                    // בדיקה: האם שמענו מהערוץ הזה דרך ה-listener לאחרונה?
-                    // נשתמש ב-lastPollTime כ"שמענו לאחרונה"
                     const silent = !state.lastPollTime || (now - state.lastPollTime > 90 * 1000);
                     if (silent) {
                         state.method = 'poll';
@@ -301,15 +306,12 @@ async function startTelegramClient() {
             if (switched > 0) console.log(`🔀 Watchdog: ${switched} ערוצים → poll`);
         }, 90 * 1000);
 
-        // שמירה על חיות
         setInterval(async () => {
             try { await client.invoke(new Api.account.UpdateStatus({ offline: false })); } catch {}
         }, 30000);
 
-        // הפעלת polling סדרתי
         startSerialPolling(client);
 
-        // ── המאזין הראשי ──
         client.addEventHandler(async (update) => {
 
             if (update.className === 'UpdateChannelTooLong') {
@@ -338,10 +340,9 @@ async function startTelegramClient() {
             const state = channelRegistry.get(channelId);
             const channelName = entityCache.get(channelId) || `מקור (${channelId})`;
 
-            // ערוץ שה-listener מקבל ממנו → push, עדכון lastMsgId
             if (state) {
                 state.method = 'push';
-                state.lastPollTime = Date.now(); // "שמענו עכשיו"
+                state.lastPollTime = Date.now(); 
                 if (message.id > (state.lastMsgId || 0)) state.lastMsgId = message.id;
             }
 
@@ -392,5 +393,5 @@ startTelegramClient();
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL || '';
 if (RENDER_URL) setInterval(async () => { try { await fetch(`${RENDER_URL}/ping`); } catch {} }, 10 * 60 * 1000);
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000; // פורט ברירת המחדל של Render
 app.listen(PORT, () => console.log(`✅ שרת פועל על פורט ${PORT}`));
