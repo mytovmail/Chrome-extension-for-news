@@ -25,9 +25,19 @@ const parser = new Parser({
     }
 });
 
+// הצהרת משתנים גלובליים בראש הקובץ למניעת בעיות Scope
 let newsList = [];
 let clients = [];
 const MAX_NEWS = 1000;
+
+const channelRegistry = new Map();
+const entityCache = new Map();
+
+// משתני בטיחות לניהול ה-Polling והחיבור מחדש
+let pollIndex = 0;
+let isPolling = false;
+let isReconnecting = false;
+let pollingInterval = null; // פתרון לניהול גלובלי של ה-Interval
 
 const apiId = parseInt(process.env.TELEGRAM_API_ID);
 const apiHash = process.env.TELEGRAM_API_HASH;
@@ -49,12 +59,10 @@ const rssChannels = [
 function shouldBlockMessage(text) {
     if (!text) return false;
 
-    // מילים שנוכחותן תגרום לפסילת הפוסט כולו (נושאים רגישים ותוכן שיווקי)
     const blockList = [
         "אונס", "נאנסה", "פדופיל", "פדופיליה", "תקיפה מינית", "הטרדה מינית", 
         "מעשה מגונה", "מעשים מגונים", "גילוי עריות", "סקס", "יחסי אישות", "פורנו",
         "יחסי מין", "פורנוגרפיה",
-        // חסימה הרמטית של פרסומות ותוכן שיווקי
         "פרסומת", "ממומן", "פוסט ממומן", "תוכן שיווקי", "דיל היום", "קופון חלומי", "קנו עכשיו"
     ];
 
@@ -72,7 +80,6 @@ function censorText(text) {
 
     let censored = text;
 
-    // תיקון יציבות: מעבר נכון על רשימת ה-censorList ללא שגיאות
     censorList.forEach(word => {
         const regex = new RegExp(word, 'gi');
         censored = censored.replace(regex, '***');
@@ -102,9 +109,7 @@ app.get('/latency', (req, res) => res.json({
         clients: clients.length,
         polledChannels: [...channelRegistry.values()].map(c => ({
             name: c.name,
-            method: c.method,
-            lastMsgId: c.lastMsgId,
-            lastPollAgo: c.lastPollTime ? Math.round((Date.now() - c.lastPollTime) / 1000) + 's' : 'never'
+            lastMsgId: c.lastMsgId
         }))
     },
     log: LATENCY_LOG
@@ -147,20 +152,57 @@ function broadcast(newsItem, telegramDate) {
 }
 
 // ==========================================
-// רישום ערוצים
+// לוגיקת סריקה סדרתית מאובטחת וחסינת FloodWait
 // ==========================================
 
-const channelRegistry = new Map();
-const entityCache = new Map();
+async function pollOneChannel(client) {
+    if (isPolling) return;
+    const pollable = [...channelRegistry.entries()];
+    if (!pollable.length) return;
+
+    pollIndex = pollIndex % pollable.length;
+    const [channelId, state] = pollable[pollIndex++];
+    isPolling = true;
+
+    try {
+        const msgs = await client.getMessages(state.entity, {
+            limit: 3,
+            min_id: state.lastMsgId || 0
+        });
+        const sorted = [...(msgs || [])].sort((a, b) => a.id - b.id);
+        for (const msg of sorted) {
+            if (!msg?.message || msg.id <= (state.lastMsgId || 0)) continue;
+            if (Date.now() - msg.date * 1000 > 5 * 60 * 1000) continue;
+            state.lastMsgId = msg.id;
+            logLatency(state.name, 'serial_poll', msg.date);
+            addNewsItem(buildNewsItem(msg, state.name, channelId), msg.date);
+        }
+        isPolling = false; // שחרור במקרה של הצלחה
+    } catch (e) {
+        if (e.message?.includes('FLOOD_WAIT')) {
+            const w = parseInt(e.message.match(/\d+/)?.[0] || '10');
+            console.warn(`⏳ FloodWait ${w}s detected — עצירת ה-polling לצורכי המתנה מבוקרת`);
+            // isPolling נשאר נעול (true) כדי לחסום בקשות פולינג נוספות עד תום העונש
+            setTimeout(() => { isPolling = false; }, w * 1000);
+        } else {
+            console.warn(`[poll] ${state?.name}: ${e.message}`);
+            isPolling = false; // שחרור במקרה של שגיאה רגילה (מניעת Deadlock)
+        }
+    }
+}
+
+// ==========================================
+// בניית פריט החדשות
+// ==========================================
 
 function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
+    if (!message) return null;
     if (message.sponsored || message.isSponsored) {
-        console.log(`🚫 הודעה ממומנת נחסמה אוטומטית (טלגרם): ${channelName}`);
         return null;
     }
 
     let rawText = message.message || message.text || "";
-    let mediaIndicator = "";
+    let mediaIndicator = ""; 
 
     try {
         if (message.media) {
@@ -188,7 +230,6 @@ function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
 
     if (!rawText.trim()) rawText = "[מדיה]";
 
-    // סינון חסימות ושיווק
     if (shouldBlockMessage(rawText)) {
         console.log(`🚫 פוסט נחסם אוטומטית (תוכן בעייתי/שיווקי): ${channelName} | ${rawText.substring(0, 40)}...`);
         return null; 
@@ -213,7 +254,7 @@ function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
         hash: generateHash(rawText + channelName + (message.id || '')),
         title: "", 
         content: cleanContent, 
-        link: idClean ? `               ${idClean}/${message.id}` : '#',
+        link: idClean ? `https://t.me/c/${idClean}/${message.id}` : '#',
         source: channelName + (isEdited ? ' [ערוך]' : ''),
         imageUrl: null,
         time: new Date((message.date || Math.floor(Date.now() / 1000)) * 1000).toISOString()
@@ -230,76 +271,7 @@ function addNewsItem(item, telegramDate) {
 }
 
 // ==========================================
-// מנוע Polling סדרתי
-// ==========================================
-
-let pollIndex = 0;
-let isPolling = false;
-
-async function pollOneChannel(client) {
-    if (isPolling) return;
-
-    const pollChannels = [...channelRegistry.entries()]
-        .filter(([, c]) => c.method === 'poll' && c.entity);
-
-    if (pollChannels.length === 0) return;
-
-    pollIndex = pollIndex % pollChannels.length;
-    const [channelId, state] = pollChannels[pollIndex];
-    pollIndex++;
-
-    isPolling = true;
-    try {
-        const msgs = await client.getMessages(state.entity, {
-            limit: 5,
-            min_id: state.lastMsgId || 0
-        });
-
-        if (!msgs || msgs.length === 0) {
-            state.lastPollTime = Date.now();
-            isPolling = false;
-            return;
-        }
-
-        const sorted = [...msgs].sort((a, b) => a.id - b.id);
-        let newCount = 0;
-
-        for (const msg of sorted) {
-            if (!msg?.message) continue;
-            if (msg.id <= (state.lastMsgId || 0)) continue;
-
-            if (msg.id > (state.lastMsgId || 0)) state.lastMsgId = msg.id;
-
-            const age = Date.now() - msg.date * 1000;
-            if (age > 5 * 60 * 1000) continue;
-
-            logLatency(state.name, 'serial_poll', msg.date, `id: ${msg.id}`);
-            const item = buildNewsItem(msg, state.name, channelId);
-            if (addNewsItem(item, msg.date)) newCount++;
-        }
-
-        state.lastPollTime = Date.now();
-
-    } catch (e) {
-        if (e.message?.includes('FLOOD_WAIT')) {
-            const wait = parseInt(e.message.match(/\d+/)?.[0] || '10');
-            console.warn(`⏳ FloodWait ${wait}s על ${state.name} - מדלג`);
-            state.method = 'poll_paused';
-            setTimeout(() => { state.method = 'poll'; }, (wait + 5) * 1000);
-        } else {
-            console.warn(`[poll] ${state.name}: ${e.message}`);
-        }
-    }
-
-    isPolling = false;
-}
-
-function startSerialPolling(client) {
-    setInterval(() => pollOneChannel(client), 2000);
-}
-
-// ==========================================
-// טלגרם
+// טלגרם (אמינות והזרמה מיידית בזמן אמת)
 // ==========================================
 
 async function startTelegramClient() {
@@ -321,13 +293,19 @@ async function startTelegramClient() {
         await client.getMe();
         console.log("✅ מחובר לטלגרם!");
 
+        // מניעת לולאת התחברות כפולה ברקע באמצעות דגל חסימה
         client.on('disconnect', () => {
-            console.warn("❌ החיבור לשרתי טלגרם אבד לחלוטין. מאתחל את המכולה (Container)...");
-            setTimeout(() => process.exit(1), 1000);
+            if (isReconnecting) return;
+            isReconnecting = true;
+            console.warn("❌ החיבור לשרתי טלגרם אבד לחלוטין. מנסה להתחבר מחדש בעוד 5 שניות...");
+            setTimeout(() => { 
+                isReconnecting = false; 
+                startTelegramClient(); 
+            }, 5000);
         });
 
-        console.log("⏳ טוען דיאלוגים...");
-        const dialogs = await client.getDialogs({ limit: 500 });
+        console.log("⏳ טוען דיאלוגים ואחזור הודעות אחרונות...");
+        const dialogs = await client.getDialogs({ limit: 200 }); // הגבלה בטוחה ל-200 דיאלוגים למניעת FloodWait
 
         for (const dialog of dialogs) {
             if (!dialog.entity) continue;
@@ -336,50 +314,55 @@ async function startTelegramClient() {
             const name = dialog.entity.title || dialog.entity.firstName || `ערוץ ${id}`;
 
             entityCache.set(id, name);
-
             const lastMsgId = dialog.dialog?.topMessage || 0;
 
-            // תיקון Watchdog: מאתחל עם זמן נוכחי כדי למנוע העברת כל הערוצים למצב איטי מיד עם עליית השרת
             channelRegistry.set(id, {
                 name,
                 entity: dialog.entity,
-                method: 'push',
                 lastMsgId,
                 lastPollTime: Date.now() 
             });
-        }
 
-        console.log(`✅ נטענו ${channelRegistry.size} ערוצים | topMessage אותחל לכולם`);
-
-        setInterval(() => {
-            const now = Date.now();
-            let switched = 0;
-            for (const [, state] of channelRegistry.entries()) {
-                if (state.method === 'push') {
-                    const silent = !state.lastPollTime || (now - state.lastPollTime > 90 * 1000);
-                    if (silent) {
-                        state.method = 'poll';
-                        switched++;
-                    }
+            if (dialog.message) {
+                const item = buildNewsItem(dialog.message, name, id);
+                if (item && !newsList.find(n => n.hash === item.hash)) {
+                    newsList.push(item);
                 }
             }
-            if (switched > 0) console.log(`🔀 Watchdog: ${switched} ערוצים → poll`);
-        }, 90 * 1000);
+        }
+
+        newsList.sort((a, b) => new Date(b.time) - new Date(a.time));
+        console.log(`✅ נטענו ${channelRegistry.size} ערוצים וההיסטוריה אותחלה`);
+
+        // פתרון מניעת דליפת intervals: ניקוי ה-Interval הקודם לפני הפעלת החדש
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+        }
+        pollingInterval = setInterval(() => pollOneChannel(client), 2000);
 
         setInterval(async () => {
             try { await client.invoke(new Api.account.UpdateStatus({ offline: false })); } catch {}
         }, 30000);
 
-        startSerialPolling(client);
-
+        // המאזין בזמן אמת של טלגרם
         client.addEventHandler(async (update) => {
 
             if (update.className === 'UpdateChannelTooLong') {
                 const chId = update.channelId?.toString();
                 const state = chId ? channelRegistry.get(chId) : null;
-                if (state) {
-                    state.method = 'poll';
-                    console.log(`⚡ TooLong → ${state.name} עובר ל-poll`);
+                if (state && state.entity) {
+                    console.log(`⚡ Updates TooLong detected on ${state.name}. Syncing...`);
+                    // שימוש מבוסס min_id למניעת מרוץ או שאיבת כפילויות מיותרות
+                    client.getMessages(state.entity, { limit: 5, min_id: state.lastMsgId || 0 }).then(msgs => {
+                        const sorted = [...(msgs || [])].sort((a, b) => a.id - b.id);
+                        sorted.forEach(msg => {
+                            if (msg.id > (state.lastMsgId || 0)) {
+                                state.lastMsgId = msg.id;
+                                const item = buildNewsItem(msg, state.name, chId);
+                                addNewsItem(item, msg.date);
+                            }
+                        });
+                    }).catch(e => console.error("Error during TooLong sync:", e.message));
                 }
                 return;
             }
@@ -401,8 +384,6 @@ async function startTelegramClient() {
             const channelName = entityCache.get(channelId) || `מקור (${channelId})`;
 
             if (state) {
-                state.method = 'push';
-                state.lastPollTime = Date.now(); 
                 if (message.id > (state.lastMsgId || 0)) state.lastMsgId = message.id;
             }
 
@@ -414,10 +395,10 @@ async function startTelegramClient() {
 
         }, new Raw({}));
 
-        console.log("✅ מאזין + polling סדרתי פעילים");
+        console.log("✅ מאזין דחיפה (Push Listener) פעיל בזמן אמת");
 
     } catch (error) {
-        console.error("❌ שגיאה:", error.message);
+        console.error("❌ שגיאה בהתחברות לשרתי טלגרם:", error.message);
         setTimeout(startTelegramClient, 30000);
     }
 }
@@ -435,7 +416,7 @@ async function fetchRSSData(channel) {
             
             // מניעת כפילויות וסינון תכנים פוסלים (Block) באתרי חדשות ו-RSS
             if (shouldBlockMessage(item.title) || shouldBlockMessage(cleanText)) {
-                return; // דילוג על כל הכתבה במידה והיא מכילה נושא רגיש
+                return; 
             }
 
             let imageUrl = item.enclosure?.url || null;
