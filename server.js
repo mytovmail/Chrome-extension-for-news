@@ -13,9 +13,8 @@ const { Raw } = require('telegram/events');
 const app = express();
 app.use(cors());
 
-// הגדרת כותרות דפדפן עשירות והגדלת ה-Timeout למעקף חסימות RSS ו-403
 const parser = new Parser({
-    timeout: 10000, // 10 שניות
+    timeout: 10000, 
     headers: { 
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -43,36 +42,36 @@ const rssChannels = [
 ];
 
 // ==========================================
-// לוגיקת סינון וצנזורה (צניעות, בטיחות וניקיון שפה)
+// לוגיקת סינון וצנזורה (צניעות, בטיחות וחסימת שיווק)
 // ==========================================
 
-// 1. בדיקה האם יש לפסול את הפוסט כולו (מתאים לנושאים רגישים שאינם הולמים למגזר)
 function shouldBlockMessage(text) {
     if (!text) return false;
 
-    // מילים שנוכחותן תגרום לפסילת הפוסט כולו
+    // מילים שנוכחותן תגרום לפסילת הפוסט כולו (נושאים רגישים ותוכן שיווקי)
     const blockList = [
         "אונס", "נאנסה", "פדופיל", "פדופיליה", "תקיפה מינית", "הטרדה מינית", 
-        "מעשה מגונה", "מעשים מגונים", "גילוי עריות", "זנות", "זונה", "סקסי", "אנס", "סקס", "יחסי אישות", "פורנו",
-        "יחסי מין", "פורנוגרפיה"
+        "מעשה מגונה", "מעשים מגונים", "גילוי עריות", "סקס", "יחסי אישות", "פורנו",
+        "יחסי מין", "פורנוגרפיה",
+        // חסימה הרמטית של פרסומות ותוכן שיווקי
+        "פרסומת", "ממומן", "פוסט ממומן", "תוכן שיווקי", "דיל היום", "קופון חלומי", "קנו עכשיו"
     ];
 
     const lowerText = text.toLowerCase();
     return blockList.some(word => lowerText.includes(word));
 }
 
-// 2. פונקציה להחלפת קללות וניבולי פה בכוכביות (הוסרו כינויי גנאי לבקשתך)
 function censorText(text) {
     if (!text) return "";
 
     const censorList = [
         "חראות", "חרא", "זבלים", "זבל", "נבלות", "נבלה", "מחורבנת", "מחורבן", "חולירע", "לעזאזל",
-        "בן זונה", "זונות", "זונה", "שרמוטה", "מניאקים", "מניאק", "שרצים", "שיט"
+        "בן זונה", "זונות", "זונה", "שרמוטה", "מניאקים", "מניאק", "שרצים"
     ];
 
     let censored = text;
 
-    censorList.forEach(word => {
+    badWords.forEach(word => {
         const regex = new RegExp(word, 'gi');
         censored = censored.replace(regex, '***');
     });
@@ -81,7 +80,7 @@ function censorText(text) {
 }
 
 // ==========================================
-// לוגים
+// לוגים וסטטיסטיקה
 // ==========================================
 
 const LATENCY_LOG = [];
@@ -146,19 +145,47 @@ function broadcast(newsItem, telegramDate) {
 }
 
 // ==========================================
-// רישום ערוצים - מעקב לפי lastMsgId
+// רישום ערוצים
 // ==========================================
 
 const channelRegistry = new Map();
 const entityCache = new Map();
 
 function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
+    if (message.sponsored || message.isSponsored) {
+        console.log(`🚫 הודעה ממומנת נחסמה אוטומטית (טלגרם): ${channelName}`);
+        return null;
+    }
+
     let rawText = message.message || message.text || "";
+    let mediaIndicator = "";
+
+    // זיהוי מדיה וסקרים בטלגרם
+    if (message.media) {
+        const mediaClass = message.media.className;
+        if (mediaClass === 'MessageMediaPhoto' || message.photo) {
+            mediaIndicator = "\n[תמונה במקור]";
+        } else if (mediaClass === 'MessageMediaDocument' || message.video || message.gif) {
+            const mime = message.media.document?.mimeType || "";
+            if (mime.startsWith('video') || message.video) {
+                mediaIndicator = "\n[סרטון במקור]";
+            }
+        } else if (mediaClass === 'MessageMediaPoll' || message.poll) {
+            const pollObj = message.media.poll;
+            if (pollObj) {
+                const q = pollObj.question;
+                const questionText = (q && typeof q === 'object') ? (q.text || "") : (q || "");
+                rawText = `סקר: ${questionText}`;
+                mediaIndicator = "\n[סקר במקור]";
+            }
+        }
+    }
+
     if (!rawText.trim()) rawText = "[מדיה]";
 
-    // בדיקת פסילה: אם הפוסט מכיל תוכן שאינו הולם, נפסול אותו מיידית ולא נשדר אותו
+    // סינון חסימות ושיווק
     if (shouldBlockMessage(rawText)) {
-        console.log(`🚫 פוסט נחסם אוטומטית (אינו תואם את כללי הקהילה): ${channelName} | ${rawText.substring(0, 40)}...`);
+        console.log(`🚫 פוסט נחסם אוטומטית (תוכן בעייתי/שיווקי): ${channelName} | ${rawText.substring(0, 40)}...`);
         return null; 
     }
 
@@ -173,32 +200,15 @@ function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
 
     if (filteredLines.length === 0) return null;
 
-    let title = '';
-    let content = '';
-
-    if (filteredLines.length === 1) {
-        content = filteredLines[0];
-    } else {
-        title = filteredLines[0];
-        content = filteredLines.slice(1).join('\n');
-
-        if (title.length > 80) {
-            let cutIndex = title.lastIndexOf(' ', 80);
-            if (cutIndex === -1) cutIndex = 80;
-            content = title.substring(cutIndex).trim() + (content ? '\n' + content : '');
-            title = title.substring(0, cutIndex).trim() + '...';
-        }
-    }
-
-    // החלת הצנזור של הכוכביות על הכותרת ועל גוף הפוסט
-    const cleanTitle = censorText(title);
-    const cleanContent = censorText(content);
+    // הרכבת הטקסט המלא (ללא שום פיצול כותרת מאולץ בטלגרם)
+    let fullContent = filteredLines.join('\n') + mediaIndicator;
+    const cleanContent = censorText(fullContent);
 
     const idClean = channelIdStr ? channelIdStr.toString().replace('-100', '') : '';
     return {
         hash: generateHash(rawText + channelName + (message.id || '')),
-        title: cleanTitle,
-        content: cleanContent,
+        title: "", // בטלגרם אין באמת כותרת
+        content: cleanContent, // ההודעה מועברת בשלמותה כגוף ההודעה
         link: idClean ? `               ${idClean}/${message.id}` : '#',
         source: channelName + (isEdited ? ' [ערוך]' : ''),
         imageUrl: null,
@@ -216,7 +226,7 @@ function addNewsItem(item, telegramDate) {
 }
 
 // ==========================================
-// מנוע Polling סדרתי - ערוץ אחד בכל פעם
+// מנוע Polling סדרתי
 // ==========================================
 
 let pollIndex = 0;
@@ -300,7 +310,7 @@ async function startTelegramClient() {
             autoReconnect: true,
             floodSleepThreshold: 90,
             receiveUpdates: true,
-            useWSS: true 
+            useWSS: true
         });
 
         await client.connect();
