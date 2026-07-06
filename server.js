@@ -43,6 +43,44 @@ const rssChannels = [
 ];
 
 // ==========================================
+// לוגיקת סינון וצנזורה (צניעות, בטיחות וניקיון שפה)
+// ==========================================
+
+// 1. בדיקה האם יש לפסול את הפוסט כולו (מתאים לנושאים רגישים שאינם הולמים למגזר)
+function shouldBlockMessage(text) {
+    if (!text) return false;
+
+    // מילים שנוכחותן תגרום לפסילת הפוסט כולו
+    const blockList = [
+        "אונס", "נאנסה", "פדופיל", "פדופיליה", "תקיפה מינית", "הטרדה מינית", 
+        "מעשה מגונה", "מעשים מגונים", "גילוי עריות", "זנות", "זונה", "סקסי", "אנס", "סקס", "יחסי אישות", "פורנו",
+        "יחסי מין", "פורנוגרפיה"
+    ];
+
+    const lowerText = text.toLowerCase();
+    return blockList.some(word => lowerText.includes(word));
+}
+
+// 2. פונקציה להחלפת קללות וניבולי פה בכוכביות (הוסרו כינויי גנאי לבקשתך)
+function censorText(text) {
+    if (!text) return "";
+
+    const censorList = [
+        "חראות", "חרא", "זבלים", "זבל", "נבלות", "נבלה", "מחורבנת", "מחורבן", "חולירע", "לעזאזל",
+        "בן זונה", "זונות", "זונה", "שרמוטה", "מניאקים", "מניאק", "שרצים", "שיט"
+    ];
+
+    let censored = text;
+
+    censorList.forEach(word => {
+        const regex = new RegExp(word, 'gi');
+        censored = censored.replace(regex, '***');
+    });
+
+    return censored;
+}
+
+// ==========================================
 // לוגים
 // ==========================================
 
@@ -118,6 +156,12 @@ function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
     let rawText = message.message || message.text || "";
     if (!rawText.trim()) rawText = "[מדיה]";
 
+    // בדיקת פסילה: אם הפוסט מכיל תוכן שאינו הולם, נפסול אותו מיידית ולא נשדר אותו
+    if (shouldBlockMessage(rawText)) {
+        console.log(`🚫 פוסט נחסם אוטומטית (אינו תואם את כללי הקהילה): ${channelName} | ${rawText.substring(0, 40)}...`);
+        return null; 
+    }
+
     const stopWords = ["להמשך קריאה", "להצטרפות", "לכל העדכונים", "כנסו",
         "לפרטים נוספים", "t.me", "chat.whatsapp.com", "לקבוצת הוואטסאפ", "לערוץ הטלגרם"];
 
@@ -132,26 +176,29 @@ function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
     let title = '';
     let content = '';
 
-    // פתרון מקצועי: מניעת יצירת כותרת מדומה לפוסט שמכיל שורה אחת בלבד
     if (filteredLines.length === 1) {
         content = filteredLines[0];
     } else {
         title = filteredLines[0];
         content = filteredLines.slice(1).join('\n');
 
-        // פתרון מקצועי: מניעת קטיעת מילים באמצע בעת חיתוך כותרת ארוכה
         if (title.length > 80) {
             let cutIndex = title.lastIndexOf(' ', 80);
-            if (cutIndex === -1) cutIndex = 80; // fallback
+            if (cutIndex === -1) cutIndex = 80;
             content = title.substring(cutIndex).trim() + (content ? '\n' + content : '');
             title = title.substring(0, cutIndex).trim() + '...';
         }
     }
 
+    // החלת הצנזור של הכוכביות על הכותרת ועל גוף הפוסט
+    const cleanTitle = censorText(title);
+    const cleanContent = censorText(content);
+
     const idClean = channelIdStr ? channelIdStr.toString().replace('-100', '') : '';
     return {
         hash: generateHash(rawText + channelName + (message.id || '')),
-        title, content,
+        title: cleanTitle,
+        content: cleanContent,
         link: idClean ? `               ${idClean}/${message.id}` : '#',
         source: channelName + (isEdited ? ' [ערוך]' : ''),
         imageUrl: null,
@@ -247,21 +294,19 @@ async function startTelegramClient() {
     }
 
     try {
-        // הגדרות חיבור מאובטחות וניסיונות תקשורת מורחבים
         const client = new TelegramClient(new StringSession(sessionString), apiId, apiHash, {
             connectionRetries: 15,
             retryDelay: 3000,
             autoReconnect: true,
             floodSleepThreshold: 90,
             receiveUpdates: true,
-            useWSS: true // שימוש בחיבורי Socket מאובטחים
+            useWSS: true 
         });
 
         await client.connect();
         await client.getMe();
         console.log("✅ מחובר לטלגרם!");
 
-        // מניעת זליגת זיכרון: במקרה של כשל רשת מתמשך, נסיים את התהליך ונאפשר ל-Render להרים מכולה חדשה ורעננה בתוך שניות
         client.on('disconnect', () => {
             console.warn("❌ החיבור לשרתי טלגרם אבד לחלוטין. מאתחל את המכולה (Container)...");
             setTimeout(() => process.exit(1), 1000);
@@ -372,12 +417,24 @@ async function fetchRSSData(channel) {
         feed.items.reverse().forEach(item => {
             const rawContent = item.content || item.contentSnippet || '';
             const cleanText = cheerio.load(rawContent).text().replace(/<[^>]+>/g, '').trim();
+            
+            // מניעת כפילויות וסינון תכנים פוסלים (Block) באתרי חדשות ו-RSS
+            if (shouldBlockMessage(item.title) || shouldBlockMessage(cleanText)) {
+                return; // דילוג על כל הכתבה במידה והיא מכילה נושא רגיש
+            }
+
             let imageUrl = item.enclosure?.url || null;
             if (!imageUrl) { const m = rawContent.match(/<img[^>]+src="([^">]+)"/i); if (m) imageUrl = m[1]; }
-            const hash = generateHash(item.title + cleanText);
+            
+            // החלת צנזור כוכביות על כותרות וגוף הכתבות של אתרי החדשות
+            const cleanTitle = censorText(item.title);
+            const cleanBody = censorText(cleanText);
+
+            const hash = generateHash(cleanTitle + cleanBody);
             if (newsList.find(n => n.hash === hash)) return;
             if (new Date(item.isoDate || 0).getTime() < Date.now() - 48 * 3600 * 1000) return;
-            const newsItem = { hash, title: item.title, content: cleanText, link: item.link, source: channel.name, imageUrl, time: item.isoDate || new Date().toISOString() };
+            
+            const newsItem = { hash, title: cleanTitle, content: cleanBody, link: item.link, source: channel.name, imageUrl, time: item.isoDate || new Date().toISOString() };
             newsList.unshift(newsItem);
             if (newsList.length > MAX_NEWS) newsList.pop();
             broadcast(newsItem, null);
@@ -393,5 +450,5 @@ startTelegramClient();
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL || '';
 if (RENDER_URL) setInterval(async () => { try { await fetch(`${RENDER_URL}/ping`); } catch {} }, 10 * 60 * 1000);
 
-const PORT = process.env.PORT || 10000; // פורט ברירת המחדל של Render
+const PORT = process.env.PORT || 10000; 
 app.listen(PORT, () => console.log(`✅ שרת פועל על פורט ${PORT}`));
