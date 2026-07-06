@@ -15,7 +15,7 @@ app.use(cors());
 
 // הגדרת כותרות דפדפן עשירות והגדלת ה-Timeout למעקף חסימות RSS ו-403
 const parser = new Parser({
-    timeout: 10000, 
+    timeout: 10000, // 10 שניות
     headers: { 
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -72,7 +72,7 @@ function censorText(text) {
 
     let censored = text;
 
-    // תיקון קריטי: שימוש ב-censorList במקום במשתנה הלא מוגדר badWords
+    // תיקון יציבות: מעבר נכון על רשימת ה-censorList ללא שגיאות
     censorList.forEach(word => {
         const regex = new RegExp(word, 'gi');
         censored = censored.replace(regex, '***');
@@ -162,7 +162,6 @@ function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
     let rawText = message.message || message.text || "";
     let mediaIndicator = "";
 
-    // הגנה חסינת שגיאות (try-catch) בעת זיהוי מדיה וסקרים בטלגרם למניעת קריסות שרת
     try {
         if (message.media) {
             const mediaClass = message.media.className;
@@ -340,12 +339,13 @@ async function startTelegramClient() {
 
             const lastMsgId = dialog.dialog?.topMessage || 0;
 
+            // תיקון Watchdog: מאתחל עם זמן נוכחי כדי למנוע העברת כל הערוצים למצב איטי מיד עם עליית השרת
             channelRegistry.set(id, {
                 name,
                 entity: dialog.entity,
                 method: 'push',
                 lastMsgId,
-                lastPollTime: null
+                lastPollTime: Date.now() 
             });
         }
 
