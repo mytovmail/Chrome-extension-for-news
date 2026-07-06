@@ -13,6 +13,7 @@ const { Raw } = require('telegram/events');
 const app = express();
 app.use(cors());
 
+// הגדרת כותרות דפדפן עשירות והגדלת ה-Timeout למעקף חסימות RSS ו-403
 const parser = new Parser({
     timeout: 10000, 
     headers: { 
@@ -66,12 +67,13 @@ function censorText(text) {
 
     const censorList = [
         "חראות", "חרא", "זבלים", "זבל", "נבלות", "נבלה", "מחורבנת", "מחורבן", "חולירע", "לעזאזל",
-        "בן זונה", "זונות", "זונה", "שרמוטה", "מניאקים", "מניאק", "שרצים"
+        "בן זונה", "זונות", "זונה", "שרמוטה", "מניאקים", "מניאק", "שרצים", "שיט"
     ];
 
     let censored = text;
 
-    badWords.forEach(word => {
+    // תיקון קריטי: שימוש ב-censorList במקום במשתנה הלא מוגדר badWords
+    censorList.forEach(word => {
         const regex = new RegExp(word, 'gi');
         censored = censored.replace(regex, '***');
     });
@@ -160,25 +162,29 @@ function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
     let rawText = message.message || message.text || "";
     let mediaIndicator = "";
 
-    // זיהוי מדיה וסקרים בטלגרם
-    if (message.media) {
-        const mediaClass = message.media.className;
-        if (mediaClass === 'MessageMediaPhoto' || message.photo) {
-            mediaIndicator = "\n[תמונה במקור]";
-        } else if (mediaClass === 'MessageMediaDocument' || message.video || message.gif) {
-            const mime = message.media.document?.mimeType || "";
-            if (mime.startsWith('video') || message.video) {
-                mediaIndicator = "\n[סרטון במקור]";
-            }
-        } else if (mediaClass === 'MessageMediaPoll' || message.poll) {
-            const pollObj = message.media.poll;
-            if (pollObj) {
-                const q = pollObj.question;
-                const questionText = (q && typeof q === 'object') ? (q.text || "") : (q || "");
-                rawText = `סקר: ${questionText}`;
-                mediaIndicator = "\n[סקר במקור]";
+    // הגנה חסינת שגיאות (try-catch) בעת זיהוי מדיה וסקרים בטלגרם למניעת קריסות שרת
+    try {
+        if (message.media) {
+            const mediaClass = message.media.className;
+            if (mediaClass === 'MessageMediaPhoto' || message.photo) {
+                mediaIndicator = "\n[תמונה במקור]";
+            } else if (mediaClass === 'MessageMediaDocument' || message.video || message.gif) {
+                const mime = message.media.document?.mimeType || "";
+                if (mime.startsWith('video') || message.video) {
+                    mediaIndicator = "\n[סרטון במקור]";
+                }
+            } else if (mediaClass === 'MessageMediaPoll' || message.poll) {
+                const pollObj = message.media.poll;
+                if (pollObj) {
+                    const q = pollObj.question;
+                    const questionText = (q && typeof q === 'object') ? (q.text || "") : (q || "");
+                    rawText = `סקר: ${questionText}`;
+                    mediaIndicator = "\n[סקר במקור]";
+                }
             }
         }
+    } catch (e) {
+        console.error("⚠️ שגיאה לא קריטית בפענוח סוג המדיה - ממשיך לעבד טקסט:", e.message);
     }
 
     if (!rawText.trim()) rawText = "[מדיה]";
@@ -200,15 +206,14 @@ function buildNewsItem(message, channelName, channelIdStr, isEdited = false) {
 
     if (filteredLines.length === 0) return null;
 
-    // הרכבת הטקסט המלא (ללא שום פיצול כותרת מאולץ בטלגרם)
     let fullContent = filteredLines.join('\n') + mediaIndicator;
     const cleanContent = censorText(fullContent);
 
     const idClean = channelIdStr ? channelIdStr.toString().replace('-100', '') : '';
     return {
         hash: generateHash(rawText + channelName + (message.id || '')),
-        title: "", // בטלגרם אין באמת כותרת
-        content: cleanContent, // ההודעה מועברת בשלמותה כגוף ההודעה
+        title: "", 
+        content: cleanContent, 
         link: idClean ? `               ${idClean}/${message.id}` : '#',
         source: channelName + (isEdited ? ' [ערוך]' : ''),
         imageUrl: null,
